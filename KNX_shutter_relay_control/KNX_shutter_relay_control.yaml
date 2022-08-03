@@ -1,0 +1,208 @@
+blueprint:
+  name: KNX shutter management via ordinary relay actor
+  description: Able to manage shutter up and down movement as well as stop shutter. Created for H8I8O module 
+that controlls relays.
+  domain: automation
+  input:
+    virtual_long_ga:
+      name: Virtual Long Group Address (GA)
+      description: This is the group address you will use to control the long movement of the shutter by 
+sending binary 1 (close) or 0 (open).
+    virtual_short_ga:
+      name: Virtual Short Group Address (GA)
+      description: This is the group address you will use to control the long movement of the shutter by 
+sending binary 1 (move up) or 0 (move down).
+    virtual_stop_ga:
+      name: Virtual Stop Group Address (GA)
+      description: This is the group address you will use to stop the movement by sending binary 1 (stop).
+    down_ga:
+      name: Downward Group Address
+      description: This is the group address used to control downward movement of the shutter. Binary 1 turns 
+on the movement and 0 turns it off.
+    up_ga:
+      name: Upward Group Address
+      description: This is the group address used to control upward movement of the shutter. Binary 1 turns 
+on the movement and 0 turns it off.
+    long_time_open:
+      name: Long movement time to open (seconds)
+      description: This is the time needed for the shutter to fully open.
+    long_time_close:
+      name: Long movement time to close (seconds)
+      description: This is the time needed for the shutter to fully close.
+    short_time_open:
+      name: Short movement time to open (milliseconds)
+      description: This is the time needed for the shutter to step once to open.
+    short_time_close:
+      name: Short movement time to close (milliseconds)
+      description: This is the time needed for the shutter to step once to close.
+
+# Group addresses 31.X.Y for automating group addresses 1.X.Y
+
+# Long movement
+# Upward and downward movement (full, long)
+mode: restart
+trigger:
+    - platform: event
+      event_type: knx_event
+      event_data:
+        destination: !input virtual_long_ga
+        telegramtype: "GroupValueWrite"
+      id: "long_move"
+    - platform: event
+      event_type: knx_event
+      event_data:
+        destination: !input virtual_short_ga
+        telegramtype: "GroupValueWrite"
+      id: "short_move"
+    - platform: event
+      event_type: knx_event
+      event_data:
+        destination: !input virtual_stop_ga
+        data: 1
+        telegramtype: "GroupValueWrite"
+      id: "stop_move"
+    - platform: homeassistant
+      event: start
+      id: "initialize"
+    - platform: event
+      event_type: automation_reloaded
+      id: "initialize"
+    # when KNX integration was reloaded
+    - platform: event
+      event_type: service_registered
+      event_data:
+        domain: knx
+        service: event_register
+      id: "initialize"
+      
+action:
+  - choose:
+  # LONG MOVE DOWN
+    - conditions:
+        condition: and
+        conditions:
+        - condition: trigger
+          id: "long_move"
+        - "{{ trigger.event.data.data == 1 }}"
+      sequence:
+        - service: knx.send
+          data:
+            # Turn off the opposite movement relay
+              address: !input up_ga
+              payload: 0
+        - delay:
+              milliseconds: 500
+        - service: knx.send
+          data:
+              address: !input down_ga
+              payload: 1
+        - delay: !input long_time_close
+        - service: knx.send
+          data:
+              address: !input down_ga
+              payload: 0
+  # LONG MOVE UP
+    - conditions:
+        condition: and
+        conditions:
+        - condition: trigger
+          id: "long_move"
+        - "{{ trigger.event.data.data == 0 }}"
+      sequence:
+          - service: knx.send
+            data:
+              # Turn off the opposite movement relay
+              address: !input down_ga
+              payload: 0
+          - delay:
+              milliseconds: 500
+          - service: knx.send
+            data:
+              address: !input up_ga
+              payload: 1
+          - delay: !input long_time_open
+          - service: knx.send
+            data:
+              address: !input up_ga
+              payload: 0
+  # SHORT MOVE DOWN
+    - conditions:
+        condition: and
+        conditions:
+        - condition: trigger
+          id: "short_move"
+        - "{{ trigger.event.data.data == 1 }}"
+      sequence:
+      - service: knx.send
+        data:
+          # Turn off the opposite movement relay
+          address: !input up_ga
+          payload: 0
+      - delay:
+          milliseconds: 500
+      - service: knx.send
+        data:
+          address: !input down_ga
+          payload: 1
+      - delay:
+          milliseconds: !input short_time_close
+      - service: knx.send
+        data:
+          address: !input down_ga
+          payload: 0
+  # SHORT MOVE UP
+    - conditions:
+        condition: and
+        conditions:
+        - condition: trigger
+          id: "short_move"
+        - "{{ trigger.event.data.data == 0 }}"
+      sequence:
+      - service: knx.send
+        data:
+          # Turn off the opposite movement relay
+          address: !input down_ga
+          payload: 0
+      - delay:
+          milliseconds: 500
+      - service: knx.send
+        data:
+          address: !input up_ga
+          payload: 1
+      - delay:
+          milliseconds: !input short_time_open
+      - service: knx.send
+        data:
+          address: !input up_ga
+          payload: 0
+  # STOP MOVE
+    - conditions:
+        condition: and
+        conditions:
+        - condition: trigger
+          id: "stop_move"
+        - "{{ trigger.event.data.data == 1 }}"
+      sequence:
+      - service: knx.send
+        data:
+          address: !input up_ga
+          payload: 0
+      - delay:
+          milliseconds: 500
+      - service: knx.send
+        data:
+          address: !input down_ga
+          payload: 0
+    - conditions:
+        condition: trigger
+        id: "initialize"
+      sequence:
+        - service: knx.event_register
+          data:
+            address: !input virtual_long_ga
+        - service: knx.event_register
+          data:
+            address: !input virtual_short_ga
+        - service: knx.event_register
+          data:
+            address: !input virtual_stop_ga
